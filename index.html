@@ -5,10 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#101a18">
 <title>Road Rater Alpha</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 <style>
 :root{color-scheme:dark;--bg:#101a18;--panel:#1b2925;--muted:#9db0a8;--line:#30423b;--green:#8be0a8;--yellow:#f2ca68;--orange:#f39a5a;--red:#ef7777}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f3f7f4;font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 main{max-width:760px;margin:auto;padding:20px 16px 40px}.brand{display:flex;align-items:center;gap:12px;margin:8px 0 22px}.logo{width:44px;height:44px;border-radius:14px;background:#214334;display:grid;place-items:center;font-size:23px}.brand small,.muted{color:var(--muted)}h1{font-size:21px;margin:0}h2{font-size:16px;margin:0 0 14px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;margin:12px 0}.status{display:flex;justify-content:space-between;gap:10px;align-items:center}.pill{font-size:12px;padding:6px 10px;border-radius:99px;background:#314139;color:var(--green)}.score{font-size:42px;font-weight:750;letter-spacing:-1px;margin:6px 0}.sub{color:var(--muted);font-size:13px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.metric{background:#14201c;border-radius:13px;padding:12px}.metric strong{display:block;font-size:22px;margin-top:5px}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}button,select{font:inherit;border:0;border-radius:12px;padding:14px;background:#315d45;color:white;font-weight:650}button.secondary{background:#33423d}button:disabled{opacity:.4}.wide{width:100%;margin-top:10px}.bar{height:10px;background:#34443d;border-radius:10px;overflow:hidden}.bar span{display:block;height:100%;width:0;background:var(--green);transition:width .2s}.event{padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}.event:last-child{border:0}.note{font-size:12px;line-height:1.5;color:var(--muted)}label{display:block;color:var(--muted);font-size:13px;margin-bottom:7px}select{width:100%;background:#263630}canvas{width:100%;height:90px;background:#14201c;border-radius:12px}.history-item{padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}.history-item:last-child{border:0}
+ #journeyMap{height:min(62vh,440px);min-height:280px;border-radius:13px;background:#14201c;overflow:hidden}.map-controls{display:flex;gap:10px;align-items:end;margin:0 0 12px}.map-controls label{flex:1;margin:0}.map-controls button{padding:11px 12px;font-size:13px;white-space:nowrap}.leaflet-container{font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#1b2925;color:#f3f7f4}.leaflet-control-attribution{font-size:10px!important}@media(max-width:480px){main{padding:14px 12px 32px}.panel{padding:14px}.map-controls{align-items:stretch;flex-direction:column}.map-controls button{width:100%}}
 </style>
 </head>
 <body>
@@ -35,6 +37,12 @@ main{max-width:760px;margin:auto;padding:20px 16px 40px}.brand{display:flex;alig
     <h2>Live vibration signal</h2><canvas id="chart" width="700" height="180"></canvas>
     <p class="note" id="sensorNote">On iPhone, open this page in Safari over HTTPS, then tap Start manually to request motion and location permissions.</p>
   </section>
+  <section class="panel" aria-labelledby="mapTitle">
+    <div class="status"><h2 id="mapTitle">Journey map</h2><span class="pill" id="mapStatus">Map ready</span></div>
+    <div class="map-controls"><label for="journeySelect">View a saved journey<select id="journeySelect"><option value="live">Current / latest journey</option></select></label><button class="secondary" id="showJourney" type="button">Show route</button></div>
+    <div id="journeyMap" role="img" aria-label="Journey GPS route map"></div>
+    <p class="note">Map tiles need an internet connection. GPS may be unavailable indoors or if location permission is denied. Route colours are experimental roughness estimates from nearby vibration readings: green is smoother; yellow, orange and red indicate increasing roughness. Grey means no measurement.</p>
+  </section>
   <section class="panel">
     <h2>Journey settings</h2>
     <label for="mode">Recording mode</label>
@@ -47,15 +55,22 @@ main{max-width:760px;margin:auto;padding:20px 16px 40px}.brand{display:flex;alig
   </section>
   <p class="note">Prototype only. Scores are experimental, not an engineering road-condition assessment. Phone movement in a cup holder, suspension, speed, vehicle type and mounting position all affect readings. Data stays in this browser on this device unless you export it.</p>
 </main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>
 (()=>{
 const $=id=>document.getElementById(id);
-let active=false, autoEnabled=false, watchId=null, startTime=0, lastPosition=null, distanceM=0;
+let active=false, autoEnabled=false, watchId=null, startTime=0, lastPosition=null, distanceM=0, routePoints=[];
 let samples=[], signal=[], impactTimes=[], currentSpeed=0, movingSince=null, stoppedSince=null;
 let lastSample=0, session=null, sessions=JSON.parse(localStorage.getItem('rr_sessions')||'[]');
 let gravity=[0,0,9.81], filtered=0, permissionGranted=false;
 const save=()=>localStorage.setItem('rr_sessions',JSON.stringify(sessions.slice(0,50)));
 const fmtTime=t=>new Date(t).toLocaleString();
+let map=null,liveLine=null,liveMarkers=null,savedLayer=null;
+const roughColor=r=>r==null?'#b4c2bc':r<0.8?'#54c985':r<1.5?'#f2ca68':r<2.5?'#f39a5a':'#ef7777';
+function initMap(){if(!window.L){$('mapStatus').textContent='Map library unavailable';return false}map=L.map('journeyMap').setView([20.5937,78.9629],5);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);liveLine=L.layerGroup().addTo(map);liveMarkers=L.layerGroup().addTo(map);savedLayer=L.layerGroup().addTo(map);setTimeout(()=>map.invalidateSize(),100);return true}
+function addRoutePoint(lat,lon,roughness,time){const p={lat,lon,roughness:roughness==null?null:Number(roughness.toFixed(3)),time};routePoints.push(p);if($('journeySelect').value!=='live')return;if(routePoints.length>1){const prev=routePoints[routePoints.length-2];L.polyline([[prev.lat,prev.lon],[lat,lon]],{color:roughColor(p.roughness),weight:6,opacity:.9}).addTo(liveLine)}else L.circleMarker([lat,lon],{radius:7,color:'#fff',weight:2,fillColor:'#54c985',fillOpacity:1}).bindPopup('Journey start').addTo(liveMarkers);map.panTo([lat,lon],{animate:false});$('mapStatus').textContent='Recording route'}
+function showRoute(points,isLive=false){if(!map)return;liveLine.clearLayers();liveMarkers.clearLayers();savedLayer.clearLayers();if(!points?.length){$('mapStatus').textContent='No GPS track saved';map.setView([20.5937,78.9629],5);return}const layer=isLive?liveLine:savedLayer;for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i];L.polyline([[a.lat,a.lon],[b.lat,b.lon]],{color:roughColor(b.roughness),weight:6,opacity:.9}).bindPopup(b.roughness==null?'Roughness: no measurement':'Roughness RMS: '+b.roughness+' m/s²').addTo(layer)}const markerLayer=isLive?liveMarkers:savedLayer;L.circleMarker([points[0].lat,points[0].lon],{radius:7,color:'#fff',weight:2,fillColor:'#54c985',fillOpacity:1}).bindPopup('Journey start').addTo(markerLayer);if(points.length>1)L.circleMarker([points.at(-1).lat,points.at(-1).lon],{radius:7,color:'#fff',weight:2,fillColor:'#ef7777',fillOpacity:1}).bindPopup('Journey end').addTo(markerLayer);map.fitBounds(L.latLngBounds(points.map(p=>[p.lat,p.lon])),{padding:[24,24],maxZoom:16});$('mapStatus').textContent=isLive?(active?'Recording route':'Latest route'):'Saved route'}
+function refreshJourneyChoices(){const sel=$('journeySelect'),old=sel.value;sel.innerHTML='<option value="live">Current / latest journey</option>';sessions.forEach((s,i)=>{if(s.route?.length){const o=document.createElement('option');o.value=String(i);o.textContent=fmtTime(s.started)+' · '+(s.distance/1000).toFixed(2)+' km';sel.append(o)}});if([...sel.options].some(o=>o.value===old))sel.value=old}
 function draw(){
  const c=$('chart'),ctx=c.getContext('2d'),w=c.width,h=c.height;ctx.clearRect(0,0,w,h);
  ctx.strokeStyle='#30423b';ctx.lineWidth=1;for(let y=30;y<h;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}
@@ -106,7 +121,8 @@ function onMotion(e){
 }
 function startJourney(source='manual'){
  if(active)return;
- active=true;startTime=Date.now();distanceM=0;lastPosition=null;samples=[];signal=[];impactTimes=[];session={started:startTime,source};
+ active=true;startTime=Date.now();distanceM=0;lastPosition=null;routePoints=[];samples=[];signal=[];impactTimes=[];session={started:startTime,source};
+ if(liveLine){liveLine.clearLayers();liveMarkers.clearLayers();savedLayer.clearLayers();$('journeySelect').value='live';$('mapStatus').textContent='Waiting for GPS'}
  $('state').textContent='Recording journey';$('sensorStatus').textContent='Recording';$('sensorStatus').style.color='#8be0a8';
  $('start').disabled=true;$('stop').disabled=false;addEvent('Journey started ('+source+').');
 }
@@ -114,12 +130,13 @@ function stopJourney(){
  if(!active)return;active=false;
  const rms=samples.length?Math.sqrt(samples.reduce((a,b)=>a+b*b,0)/samples.length):0;
  const score=samples.length?Math.max(0,Math.min(100,Math.round(100-Math.min(100,rms*24+impactTimes.length*1.8)))):null;
- sessions.unshift({started:startTime,ended:Date.now(),distance:distanceM,rms,impacts:impactTimes.length,score,source:session?.source||'manual'});
- save();renderHistory();$('state').textContent='Journey saved';$('sensorStatus').textContent='Ready';$('start').disabled=false;$('stop').disabled=true;addEvent('Journey saved.');update();
+ sessions.unshift({started:startTime,ended:Date.now(),distance:distanceM,rms,impacts:impactTimes.length,score,source:session?.source||'manual',route:routePoints.slice()});
+ save();renderHistory();refreshJourneyChoices();$('journeySelect').value='0';showRoute(sessions[0].route);$('state').textContent='Journey saved';$('sensorStatus').textContent='Ready';$('start').disabled=false;$('stop').disabled=true;addEvent('Journey saved.');update();
 }
 function onPosition(pos){
  const c=pos.coords;currentSpeed=c.speed!=null?Math.max(0,c.speed*3.6):currentSpeed;
  if(active&&lastPosition){const R=6371000,toRad=x=>x*Math.PI/180;const p1=toRad(lastPosition.latitude),p2=toRad(c.latitude),dp=p2-p1,dl=toRad(c.longitude-lastPosition.longitude);const q=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;const d=2*R*Math.asin(Math.sqrt(q));if(d<250)distanceM+=d}
+ if(active&&Number.isFinite(c.latitude)&&Number.isFinite(c.longitude)){const recent=samples.slice(-100);const roughness=recent.length?Math.sqrt(recent.reduce((a,b)=>a+b*b,0)/recent.length):null;addRoutePoint(c.latitude,c.longitude,roughness,Date.now())}
  lastPosition={latitude:c.latitude,longitude:c.longitude};
  if(autoEnabled){
   const now=Date.now();
@@ -131,20 +148,21 @@ function onPosition(pos){
 }
 async function begin(){
  const ok=await requestMotion();
- if(!navigator.geolocation){addEvent('Geolocation is not supported.');return}
- navigator.geolocation.watchPosition(onPosition,e=>addEvent('GPS error: '+e.message),{enableHighAccuracy:true,maximumAge:1000,timeout:15000});
+ if(!navigator.geolocation){addEvent('Geolocation is not supported. Routes will not be recorded.');$('mapStatus').textContent='GPS unavailable';return}
+ if(watchId===null)watchId=navigator.geolocation.watchPosition(onPosition,e=>{const msg=e.code===1?'Location permission denied. Vibration recording can continue, but no route will be saved.':e.code===2?'GPS location is unavailable. Move outdoors or check device location settings.':'GPS timed out. Waiting for another location update.';addEvent(msg);$('mapStatus').textContent=e.code===1?'Location denied':'Waiting for GPS';},{enableHighAccuracy:true,maximumAge:1000,timeout:15000});
  $('sensorStatus').textContent=ok?'Sensors ready':'GPS only';$('sensorNote').textContent=ok?'Motion sensor listener active. GPS updates will appear as location permission is granted.':'Motion unavailable or permission denied. GPS may still work.';
 }
 $('start').onclick=async()=>{await begin();startJourney('manual')};
 $('stop').onclick=stopJourney;
 $('auto').onclick=async()=>{if(!autoEnabled){await begin();autoEnabled=true;$('auto').textContent='Enable automatic detection: ON';$('auto').style.background='#315d45';addEvent('Automatic detection enabled. Keep page open.')}else{autoEnabled=false;$('auto').textContent='Enable automatic detection: OFF';addEvent('Automatic detection disabled.')}};
 $('mode').onchange=()=>{if($('mode').value==='manual'&&autoEnabled){autoEnabled=false;$('auto').textContent='Enable automatic detection: OFF'}};
-function renderHistory(){if(!sessions.length){$('history').textContent='No saved journeys yet.';return}$('history').innerHTML='';sessions.slice(0,8).forEach(s=>{let d=document.createElement('div');d.className='history-item';d.textContent=fmtTime(s.started)+' · '+(s.distance/1000).toFixed(2)+' km · '+(s.score==null?'No score':s.score+'/100')+' · '+s.impacts+' impacts';$('history').append(d)})}
+function renderHistory(){if(!sessions.length){$('history').textContent='No saved journeys yet.';return}$('history').innerHTML='';sessions.slice(0,8).forEach((s,i)=>{let d=document.createElement('div');d.className='history-item';d.textContent=fmtTime(s.started)+' · '+(s.distance/1000).toFixed(2)+' km · '+(s.score==null?'No score':s.score+'/100')+' · '+s.impacts+' impacts'+(s.route?.length?' · GPS track saved':' · No GPS track');if(s.route?.length){d.tabIndex=0;d.setAttribute('role','button');d.title='Show this journey on the map';d.onclick=()=>{$('journeySelect').value=String(i);showRoute(s.route);$('mapTitle').scrollIntoView({behavior:'smooth',block:'start'})};d.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();d.click()}}}$('history').append(d)})}
 $('export').onclick=()=>{
- let rows=[['started','ended','distance_m','rms_m_s2','impact_events','score','source'],...sessions.map(s=>[new Date(s.started).toISOString(),new Date(s.ended).toISOString(),s.distance,s.rms,s.impacts,s.score,s.source])];
+ let rows=[['started','ended','distance_m','rms_m_s2','impact_events','score','source','gps_route_json'],...sessions.map(s=>[new Date(s.started).toISOString(),new Date(s.ended).toISOString(),s.distance,s.rms,s.impacts,s.score,s.source,JSON.stringify(s.route||[])])];
  let csv=rows.map(r=>r.map(v=>'"'+String(v??'').replaceAll('"','""')+'"').join(',')).join('\n');
  let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='road-rater-journeys.csv';a.click();URL.revokeObjectURL(a.href);
 };
+if(initMap()){$('showJourney').onclick=()=>{const value=$('journeySelect').value;if(value==='live')showRoute(active?routePoints:(sessions[0]?.route||[]),true);else showRoute(sessions[Number(value)]?.route||[])};$('journeySelect').onchange=()=>$('showJourney').click();refreshJourneyChoices();if(sessions[0]?.route?.length){$('journeySelect').value='0';showRoute(sessions[0].route)}}
 renderHistory();update();
 })();
 </script>
