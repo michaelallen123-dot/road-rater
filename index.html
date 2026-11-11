@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101a18">
+<title>Road Rater Alpha</title>
+<style>
+:root{color-scheme:dark;--bg:#101a18;--panel:#1b2925;--muted:#9db0a8;--line:#30423b;--green:#8be0a8;--yellow:#f2ca68;--orange:#f39a5a;--red:#ef7777}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f3f7f4;font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:760px;margin:auto;padding:20px 16px 40px}.brand{display:flex;align-items:center;gap:12px;margin:8px 0 22px}.logo{width:44px;height:44px;border-radius:14px;background:#214334;display:grid;place-items:center;font-size:23px}.brand small,.muted{color:var(--muted)}h1{font-size:21px;margin:0}h2{font-size:16px;margin:0 0 14px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;margin:12px 0}.status{display:flex;justify-content:space-between;gap:10px;align-items:center}.pill{font-size:12px;padding:6px 10px;border-radius:99px;background:#314139;color:var(--green)}.score{font-size:42px;font-weight:750;letter-spacing:-1px;margin:6px 0}.sub{color:var(--muted);font-size:13px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.metric{background:#14201c;border-radius:13px;padding:12px}.metric strong{display:block;font-size:22px;margin-top:5px}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}button,select{font:inherit;border:0;border-radius:12px;padding:14px;background:#315d45;color:white;font-weight:650}button.secondary{background:#33423d}button:disabled{opacity:.4}.wide{width:100%;margin-top:10px}.bar{height:10px;background:#34443d;border-radius:10px;overflow:hidden}.bar span{display:block;height:100%;width:0;background:var(--green);transition:width .2s}.event{padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}.event:last-child{border:0}.note{font-size:12px;line-height:1.5;color:var(--muted)}label{display:block;color:var(--muted);font-size:13px;margin-bottom:7px}select{width:100%;background:#263630}canvas{width:100%;height:90px;background:#14201c;border-radius:12px}.history-item{padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}.history-item:last-child{border:0}
+</style>
+</head>
+<body>
+<main>
+  <header class="brand"><div class="logo">〰</div><div><h1>ROAD RATER</h1><small>Personal road intelligence · Alpha 0.1</small></div></header>
+  <section class="panel">
+    <div class="status"><div><div class="sub">CURRENT JOURNEY</div><div id="state" style="font-size:19px;font-weight:700;margin-top:4px">Ready to record</div></div><span class="pill" id="sensorStatus">Sensors not started</span></div>
+    <div class="score" id="score">—<span style="font-size:16px;color:var(--muted)"> / 100</span></div>
+    <div class="sub" id="rating">Start a journey to measure road smoothness</div>
+    <div class="bar" style="margin-top:14px"><span id="scorebar"></span></div>
+    <div class="buttons">
+      <button id="start">Start manually</button><button class="secondary" id="stop" disabled>Stop journey</button>
+    </div>
+    <button class="secondary wide" id="auto">Enable automatic detection: OFF</button>
+    <p class="note">Keep the phone secured in the same cup-holder position. Do not handle or look at the phone while driving.</p>
+  </section>
+  <section class="grid">
+    <div class="metric"><span class="sub">DISTANCE</span><strong id="distance">0.00 km</strong></div>
+    <div class="metric"><span class="sub">SPEED</span><strong id="speed">— km/h</strong></div>
+    <div class="metric"><span class="sub">ROUGHNESS RMS</span><strong id="rms">—</strong></div>
+    <div class="metric"><span class="sub">IMPACT EVENTS</span><strong id="impacts">0</strong></div>
+  </section>
+  <section class="panel">
+    <h2>Live vibration signal</h2><canvas id="chart" width="700" height="180"></canvas>
+    <p class="note" id="sensorNote">On iPhone, open this page in Safari over HTTPS, then tap Start manually to request motion and location permissions.</p>
+  </section>
+  <section class="panel">
+    <h2>Journey settings</h2>
+    <label for="mode">Recording mode</label>
+    <select id="mode"><option value="manual">Manual only</option><option value="auto">Automatic detection</option><option value="both" selected>Both manual and automatic</option></select>
+    <p class="note">Automatic mode is experimental: it starts after speed exceeds 8 km/h for 15 seconds and ends after speed stays below 3 km/h for 90 seconds. It only works while this page remains active.</p>
+  </section>
+  <section class="panel">
+    <div class="status"><h2>Recent journeys</h2><button class="secondary" id="export" style="padding:9px 12px;font-size:12px">Export CSV</button></div>
+    <div id="history" class="sub">No saved journeys yet.</div>
+  </section>
+  <p class="note">Prototype only. Scores are experimental, not an engineering road-condition assessment. Phone movement in a cup holder, suspension, speed, vehicle type and mounting position all affect readings. Data stays in this browser on this device unless you export it.</p>
+</main>
+<script>
+(()=>{
+const $=id=>document.getElementById(id);
+let active=false, autoEnabled=false, watchId=null, startTime=0, lastPosition=null, distanceM=0;
+let samples=[], signal=[], impactTimes=[], currentSpeed=0, movingSince=null, stoppedSince=null;
+let lastSample=0, session=null, sessions=JSON.parse(localStorage.getItem('rr_sessions')||'[]');
+let gravity=[0,0,9.81], filtered=0, permissionGranted=false;
+const save=()=>localStorage.setItem('rr_sessions',JSON.stringify(sessions.slice(0,50)));
+const fmtTime=t=>new Date(t).toLocaleString();
+function draw(){
+ const c=$('chart'),ctx=c.getContext('2d'),w=c.width,h=c.height;ctx.clearRect(0,0,w,h);
+ ctx.strokeStyle='#30423b';ctx.lineWidth=1;for(let y=30;y<h;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}
+ ctx.strokeStyle='#8be0a8';ctx.lineWidth=2;ctx.beginPath();
+ signal.forEach((v,i)=>{let x=i/(Math.max(1,signal.length-1))*w,y=h/2-Math.max(-2,Math.min(2,v))*35;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();
+}
+function update(){
+ $('distance').textContent=(distanceM/1000).toFixed(2)+' km';
+ $('speed').textContent=currentSpeed.toFixed(1)+' km/h';
+ $('impacts').textContent=impactTimes.length;
+ let rms=samples.length?Math.sqrt(samples.reduce((a,b)=>a+b*b,0)/samples.length):0;
+ $('rms').textContent=samples.length?rms.toFixed(3)+' m/s²':'—';
+ // Experimental relative score; calibrate with repeated drives before interpreting.
+ let score=samples.length?Math.max(0,Math.min(100,Math.round(100- Math.min(100,rms*24+impactTimes.length*1.8)))):null;
+ $('score').innerHTML=score===null?'—<span style="font-size:16px;color:var(--muted)"> / 100</span>':score+'<span style="font-size:16px;color:var(--muted)"> / 100</span>';
+ $('scorebar').style.width=(score||0)+'%';
+ $('scorebar').style.background=score>=75?'#8be0a8':score>=55?'#f2ca68':'#ef7777';
+ $('rating').textContent=score===null?'Start a journey to measure road smoothness':score>=90?'Very smooth (experimental)':score>=75?'Relatively smooth (experimental)':score>=55?'Moderate roughness (experimental)':'Rough readings detected (experimental)';
+ draw();
+}
+function addEvent(msg){let el=document.createElement('div');el.className='event';el.textContent=msg;$('sensorNote').prepend(el)}
+async function requestMotion(){
+ if(typeof DeviceMotionEvent==='undefined'){addEvent('Device motion is not available in this browser.');return false}
+ try{
+  if(typeof DeviceMotionEvent.requestPermission==='function'){
+   let p=await DeviceMotionEvent.requestPermission();if(p!=='granted'){addEvent('Motion permission was not granted.');return false}
+  }
+  window.addEventListener('devicemotion',onMotion,{passive:true});permissionGranted=true;return true;
+ }catch(e){addEvent('Motion permission error: '+e.message);return false}
+}
+function onMotion(e){
+ const a=e.acceleration;
+ const ag=e.accelerationIncludingGravity;
+ let x,y,z;
+ if(a&&a.x!=null){x=a.x||0;y=a.y||0;z=a.z||0}
+ else if(ag&&ag.x!=null){
+  // Low-pass gravity estimate, then subtract it from acceleration including gravity.
+  const alpha=.92;gravity=[0,1,2].map((i)=>alpha*gravity[i]+(1-alpha)*([ag.x,ag.y,ag.z][i]||0));
+  x=(ag.x||0)-gravity[0];y=(ag.y||0)-gravity[1];z=(ag.z||0)-gravity[2];
+ }else return;
+ const mag=Math.sqrt(x*x+y*y+z*z);
+ const now=Date.now();if(now-lastSample<50)return;lastSample=now;
+ const v=Math.abs(mag);filtered=.85*filtered+.15*v;
+ if(active){samples.push(filtered);if(samples.length>2400)samples.shift();signal.push(Math.min(2,filtered));if(signal.length>100)signal.shift();
+  if(filtered>3.0 && (!impactTimes.length||now-impactTimes[impactTimes.length-1]>700))impactTimes.push(now);
+  update();
+ }
+}
+function startJourney(source='manual'){
+ if(active)return;
+ active=true;startTime=Date.now();distanceM=0;lastPosition=null;samples=[];signal=[];impactTimes=[];session={started:startTime,source};
+ $('state').textContent='Recording journey';$('sensorStatus').textContent='Recording';$('sensorStatus').style.color='#8be0a8';
+ $('start').disabled=true;$('stop').disabled=false;addEvent('Journey started ('+source+').');
+}
+function stopJourney(){
+ if(!active)return;active=false;
+ const rms=samples.length?Math.sqrt(samples.reduce((a,b)=>a+b*b,0)/samples.length):0;
+ const score=samples.length?Math.max(0,Math.min(100,Math.round(100-Math.min(100,rms*24+impactTimes.length*1.8)))):null;
+ sessions.unshift({started:startTime,ended:Date.now(),distance:distanceM,rms,impacts:impactTimes.length,score,source:session?.source||'manual'});
+ save();renderHistory();$('state').textContent='Journey saved';$('sensorStatus').textContent='Ready';$('start').disabled=false;$('stop').disabled=true;addEvent('Journey saved.');update();
+}
+function onPosition(pos){
+ const c=pos.coords;currentSpeed=c.speed!=null?Math.max(0,c.speed*3.6):currentSpeed;
+ if(active&&lastPosition){const R=6371000,toRad=x=>x*Math.PI/180;const p1=toRad(lastPosition.latitude),p2=toRad(c.latitude),dp=p2-p1,dl=toRad(c.longitude-lastPosition.longitude);const q=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;const d=2*R*Math.asin(Math.sqrt(q));if(d<250)distanceM+=d}
+ lastPosition={latitude:c.latitude,longitude:c.longitude};
+ if(autoEnabled){
+  const now=Date.now();
+  if(currentSpeed>8){movingSince=movingSince||now;stoppedSince=null;if(!active&&now-movingSince>=15000)startJourney('automatic')}
+  else if(currentSpeed<3){stoppedSince=stoppedSince||now;movingSince=null;if(active&&now-stoppedSince>=90000)stopJourney()}
+  else{movingSince=null;stoppedSince=null}
+ }
+ update();
+}
+async function begin(){
+ const ok=await requestMotion();
+ if(!navigator.geolocation){addEvent('Geolocation is not supported.');return}
+ navigator.geolocation.watchPosition(onPosition,e=>addEvent('GPS error: '+e.message),{enableHighAccuracy:true,maximumAge:1000,timeout:15000});
+ $('sensorStatus').textContent=ok?'Sensors ready':'GPS only';$('sensorNote').textContent=ok?'Motion sensor listener active. GPS updates will appear as location permission is granted.':'Motion unavailable or permission denied. GPS may still work.';
+}
+$('start').onclick=async()=>{await begin();startJourney('manual')};
+$('stop').onclick=stopJourney;
+$('auto').onclick=async()=>{if(!autoEnabled){await begin();autoEnabled=true;$('auto').textContent='Enable automatic detection: ON';$('auto').style.background='#315d45';addEvent('Automatic detection enabled. Keep page open.')}else{autoEnabled=false;$('auto').textContent='Enable automatic detection: OFF';addEvent('Automatic detection disabled.')}};
+$('mode').onchange=()=>{if($('mode').value==='manual'&&autoEnabled){autoEnabled=false;$('auto').textContent='Enable automatic detection: OFF'}};
+function renderHistory(){if(!sessions.length){$('history').textContent='No saved journeys yet.';return}$('history').innerHTML='';sessions.slice(0,8).forEach(s=>{let d=document.createElement('div');d.className='history-item';d.textContent=fmtTime(s.started)+' · '+(s.distance/1000).toFixed(2)+' km · '+(s.score==null?'No score':s.score+'/100')+' · '+s.impacts+' impacts';$('history').append(d)})}
+$('export').onclick=()=>{
+ let rows=[['started','ended','distance_m','rms_m_s2','impact_events','score','source'],...sessions.map(s=>[new Date(s.started).toISOString(),new Date(s.ended).toISOString(),s.distance,s.rms,s.impacts,s.score,s.source])];
+ let csv=rows.map(r=>r.map(v=>'"'+String(v??'').replaceAll('"','""')+'"').join(',')).join('\n');
+ let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='road-rater-journeys.csv';a.click();URL.revokeObjectURL(a.href);
+};
+renderHistory();update();
+})();
+</script>
+</body></html>
