@@ -1,0 +1,32 @@
+{
+  "name": "road-rater",
+  "version": "1.0.0",
+  "description": "Rate the quality of the road you travel",
+  "private": true,
+  "scripts": {
+    "build:web": "node scripts/build-web.mjs",
+    "cap:sync": "npm run build:web && cap sync android",
+    "apk:debug": "npm run cap:sync && cd android && gradlew.bat assembleDebug"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/michaelallen123-dot/road-rater.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/michaelallen123-dot/road-rater/issues"
+  },
+  "homepage": "https://github.com/michaelallen123-dot/road-rater#readme",
+  "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/geolocation": "^8.2.4"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^4.0.0",
+    "@capacitor/cli": "^8.6.0",
+    "esbuild": "^0.28.2"
+  }
+}

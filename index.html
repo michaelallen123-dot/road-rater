@@ -17,11 +17,14 @@
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f3f7f4;font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 main{max-width:760px;margin:auto;padding:20px 16px 40px}.brand{display:flex;align-items:center;gap:12px;margin:8px 0 22px}.logo{width:44px;height:44px;border-radius:14px;background:#214334;display:grid;place-items:center;font-size:23px}.brand small,.muted{color:var(--muted)}h1{font-size:21px;margin:0}h2{font-size:16px;margin:0 0 14px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;margin:12px 0}.status{display:flex;justify-content:space-between;gap:10px;align-items:center}.pill{font-size:12px;padding:6px 10px;border-radius:99px;background:#314139;color:var(--green)}.score{font-size:42px;font-weight:750;letter-spacing:-1px;margin:6px 0}.sub{color:var(--muted);font-size:13px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.metric{background:#14201c;border-radius:13px;padding:12px}.metric strong{display:block;font-size:22px;margin-top:5px}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}button,select{font:inherit;border:0;border-radius:12px;padding:14px;background:#315d45;color:white;font-weight:650}button.secondary{background:#33423d}button:disabled{opacity:.4}.wide{width:100%;margin-top:10px}.bar{height:10px;background:#34443d;border-radius:10px;overflow:hidden}.bar span{display:block;height:100%;width:0;background:var(--green);transition:width .2s}.event{padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}.event:last-child{border:0}.note{font-size:12px;line-height:1.5;color:var(--muted)}label{display:block;color:var(--muted);font-size:13px;margin-bottom:7px}select{width:100%;background:#263630}canvas{width:100%;height:90px;background:#14201c;border-radius:12px}.history-item{padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}.history-item:last-child{border:0}
  #journeyMap{height:min(62vh,440px);min-height:280px;border-radius:13px;background:#14201c;overflow:hidden}.map-controls{display:flex;gap:10px;align-items:end;margin:0 0 12px}.map-controls label{flex:1;margin:0}.map-controls button{padding:11px 12px;font-size:13px;white-space:nowrap}.leaflet-container{font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#1b2925;color:#f3f7f4}.leaflet-control-attribution{font-size:10px!important}.history-list{max-height:55vh;overflow:auto}.history-item{display:flex;align-items:center;justify-content:space-between;gap:10px}.history-details{min-width:0;line-height:1.45}.delete-journey{flex:none;padding:8px 10px;font-size:12px;background:#553b36;color:#ffd5cc}@media(max-width:480px){main{padding:14px 12px 32px}.panel{padding:14px}.map-controls{align-items:stretch;flex-direction:column}.map-controls button{width:100%}.history-item{align-items:flex-start}.delete-journey{margin-top:2px}}
+ .app-nav{display:flex;gap:8px;margin-bottom:12px}.app-nav button{flex:1;padding:10px}.app-nav .selected{background:#315d45}.app-nav button:not(.selected){background:#263630}.app-page[hidden]{display:none}
 </style>
 </head>
 <body>
 <main>
   <header class="brand"><div class="logo">〰</div><div><h1>ROAD RATER</h1><small>Personal road intelligence · Alpha 0.1</small></div></header>
+  <nav class="app-nav" aria-label="App pages"><button type="button" class="nav-tab selected" data-page="journeyPage">Journey</button><button type="button" class="nav-tab" data-page="calibrationPage">Calibrate roads</button></nav>
+  <div id="journeyPage" class="app-page">
   <section class="panel">
     <div class="status"><div><div class="sub">CURRENT JOURNEY</div><div id="state" style="font-size:19px;font-weight:700;margin-top:4px">Ready to record</div></div><span class="pill" id="sensorStatus">Sensors not started</span></div>
     <div class="score" id="score">—<span style="font-size:16px;color:var(--muted)"> / 100</span></div>
@@ -62,28 +65,55 @@ main{max-width:760px;margin:auto;padding:20px 16px 40px}.brand{display:flex;alig
     <div id="history" class="sub history-list">No saved journeys yet.</div>
   </section>
   <p class="note">Prototype only. Scores are experimental, not an engineering road-condition assessment. Phone movement in a cup holder, suspension, speed, vehicle type and mounting position all affect readings. Data stays in this browser on this device unless you export it.</p>
+  </div>
+  <section id="calibrationPage" class="app-page" hidden>
+    <section class="panel">
+      <h2>Calibrate road ratings</h2>
+      <p class="note">Record a steady drive on a road you know is good, medium, or bad. Calibration uses vibration samples only while GPS speed is at least 5 km/h. Keep the phone fixed in the same holder and use a similar speed for each reference drive. Data is stored on this phone.</p>
+      <label for="calibrationType">Road sample type</label>
+      <select id="calibrationType"><option value="good">Good road (green reference)</option><option value="medium">Medium road (amber reference)</option><option value="bad">Bad road (red reference)</option></select>
+      <div class="buttons"><button id="startCalibration" type="button">Start calibration drive</button><button id="stopCalibration" class="secondary" type="button" disabled>Save reference</button></div>
+      <p id="calibrationStatus" class="note" aria-live="polite">Choose a road type, then start a calibration drive. Stop after at least 30 seconds of moving readings.</p>
+    </section>
+    <section class="panel"><h2>Saved references</h2><div id="calibrationList" class="sub"></div><button id="clearCalibration" type="button" class="secondary wide">Clear all calibration references</button></section>
+    <section class="panel"><h2>How calibrated RAG works</h2><p class="note">Once all three references are saved in order from smoothest to roughest, live readings are compared with their vibration levels. Green, amber and red are relative to your three sample drives. Recalibrate if you change the phone holder, vehicle, or typical speed. Before all three are recorded, the app shows the uncalibrated experimental score.</p></section>
+  </section>
 </main>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>
 (()=>{
 const $=id=>document.getElementById(id);
-let active=false, autoEnabled=false, watchId=null, startTime=0, lastPosition=null, distanceM=0, routePoints=[];
+let active=false, autoEnabled=false, calibrationActive=false, watchId=null, startTime=0, lastPosition=null, distanceM=0, routePoints=[];
 let samples=[], signal=[], impactTimes=[], currentSpeed=0, movingSince=null, stoppedSince=null;
+let calibrationSamples=[], calibrationType=null;
 let lastSample=0, session=null, sessions=JSON.parse(localStorage.getItem('rr_sessions')||'[]');
+let calibrations=JSON.parse(localStorage.getItem('rr_calibrations')||'{}');
 let gravity=[0,0,9.81], filtered=0, permissionGranted=false;
 const save=()=>localStorage.setItem('rr_sessions',JSON.stringify(sessions.slice(0,50)));
 const fmtTime=t=>new Date(t).toLocaleString();
 let map=null,liveLine=null,liveMarkers=null,savedLayer=null,wakeLock=null,wakeDesired=false;
 const roughColor=r=>r==null?'#b4c2bc':r<0.8?'#54c985':r<1.5?'#f2ca68':r<2.5?'#f39a5a':'#ef7777';
-function initMap(){if(!window.L){$('mapStatus').textContent='Map library unavailable';return false}map=L.map('journeyMap').setView([20.5937,78.9629],5);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);liveLine=L.layerGroup().addTo(map);liveMarkers=L.layerGroup().addTo(map);savedLayer=L.layerGroup().addTo(map);setTimeout(()=>map.invalidateSize(),100);return true}
+const motionThresholdKmh=5;
+const activeReadings=()=>active?samples:calibrationActive?calibrationSamples:[];
+const saveCalibrations=()=>localStorage.setItem('rr_calibrations',JSON.stringify(calibrations));
+function scoreForRms(rms,impacts=0){const refs=['good','medium','bad'].map(k=>calibrations[k]?.rms);if(refs.every(Number.isFinite)&&refs[0]<refs[1]&&refs[1]<refs[2])return rms<=refs[0]?90:rms>=refs[2]?20:rms<=refs[1]?Math.round(90-(rms-refs[0])*35/(refs[1]-refs[0])):Math.round(55-(rms-refs[1])*35/(refs[2]-refs[1]));return Math.max(0,Math.min(100,Math.round(100-Math.min(100,rms*24+impacts*1.8))))}
+const tamilNaduBounds=[[7.9,76.1],[13.6,80.4]];
+function initMap(){if(!window.L){$('mapStatus').textContent='Map library unavailable · tracking still works offline';return false}const bounds=L.latLngBounds(tamilNaduBounds);map=L.map('journeyMap',{maxBounds:bounds,maxBoundsViscosity:1,minZoom:6,maxZoom:17}).fitBounds(bounds);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{bounds,minZoom:6,maxZoom:17,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);liveLine=L.layerGroup().addTo(map);liveMarkers=L.layerGroup().addTo(map);savedLayer=L.layerGroup().addTo(map);setTimeout(()=>map.invalidateSize(),100);return true}
 function addRoutePoint(lat,lon,roughness,time){const p={lat,lon,roughness:roughness==null?null:Number(roughness.toFixed(3)),time};routePoints.push(p);if($('journeySelect').value!=='live')return;if(routePoints.length>1){const prev=routePoints[routePoints.length-2];L.polyline([[prev.lat,prev.lon],[lat,lon]],{color:roughColor(p.roughness),weight:6,opacity:.9}).addTo(liveLine)}else L.circleMarker([lat,lon],{radius:7,color:'#fff',weight:2,fillColor:'#54c985',fillOpacity:1}).bindPopup('Journey start').addTo(liveMarkers);map.panTo([lat,lon],{animate:false});$('mapStatus').textContent='Recording route'}
-function showRoute(points,isLive=false){if(!map)return;liveLine.clearLayers();liveMarkers.clearLayers();savedLayer.clearLayers();if(!points?.length){$('mapStatus').textContent='No GPS track saved';map.setView([20.5937,78.9629],5);return}const layer=isLive?liveLine:savedLayer;for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i];L.polyline([[a.lat,a.lon],[b.lat,b.lon]],{color:roughColor(b.roughness),weight:6,opacity:.9}).bindPopup(b.roughness==null?'Roughness: no measurement':'Roughness RMS: '+b.roughness+' m/s²').addTo(layer)}const markerLayer=isLive?liveMarkers:savedLayer;L.circleMarker([points[0].lat,points[0].lon],{radius:7,color:'#fff',weight:2,fillColor:'#54c985',fillOpacity:1}).bindPopup('Journey start').addTo(markerLayer);if(points.length>1)L.circleMarker([points.at(-1).lat,points.at(-1).lon],{radius:7,color:'#fff',weight:2,fillColor:'#ef7777',fillOpacity:1}).bindPopup('Journey end').addTo(markerLayer);map.fitBounds(L.latLngBounds(points.map(p=>[p.lat,p.lon])),{padding:[24,24],maxZoom:16});$('mapStatus').textContent=isLive?(active?'Recording route':'Latest route'):'Saved route'}
+function showRoute(points,isLive=false){if(!map)return;liveLine.clearLayers();liveMarkers.clearLayers();savedLayer.clearLayers();if(!points?.length){$('mapStatus').textContent='No GPS track saved';map.fitBounds(L.latLngBounds(tamilNaduBounds));return}const layer=isLive?liveLine:savedLayer;for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i];L.polyline([[a.lat,a.lon],[b.lat,b.lon]],{color:roughColor(b.roughness),weight:6,opacity:.9}).bindPopup(b.roughness==null?'Roughness: no measurement':'Roughness RMS: '+b.roughness+' m/s²').addTo(layer)}const markerLayer=isLive?liveMarkers:savedLayer;L.circleMarker([points[0].lat,points[0].lon],{radius:7,color:'#fff',weight:2,fillColor:'#54c985',fillOpacity:1}).bindPopup('Journey start').addTo(markerLayer);if(points.length>1)L.circleMarker([points.at(-1).lat,points.at(-1).lon],{radius:7,color:'#fff',weight:2,fillColor:'#ef7777',fillOpacity:1}).bindPopup('Journey end').addTo(markerLayer);map.fitBounds(L.latLngBounds(points.map(p=>[p.lat,p.lon])),{padding:[24,24],maxZoom:16});$('mapStatus').textContent=isLive?(active?'Recording route':'Latest route'):'Saved route'}
 function refreshJourneyChoices(){const sel=$('journeySelect'),old=sel.value;sel.innerHTML='<option value="live">Current / latest journey</option>';sessions.forEach((s,i)=>{if(s.route?.length){const o=document.createElement('option');o.value=String(i);o.textContent=fmtTime(s.started)+' · '+(s.distance/1000).toFixed(2)+' km';sel.append(o)}});if([...sel.options].some(o=>o.value===old))sel.value=old}
 function updateWakeButton(){const b=$('wakeToggle');b.textContent='Keep screen on: '+(wakeDesired?'ON':'OFF');b.setAttribute('aria-pressed',String(wakeDesired));b.style.background=wakeDesired?'#315d45':''}
 async function requestScreenWakeLock(){if(!wakeDesired||document.visibilityState!=='visible')return;if(!('wakeLock'in navigator)){wakeDesired=false;updateWakeButton();$('wakeStatus').textContent='This browser does not support keeping the screen awake. You can increase Auto-Lock time in iPhone Settings.';return}try{const requested=await navigator.wakeLock.request('screen');if(!wakeDesired||document.visibilityState!=='visible'){await requested.release();return}wakeLock=requested;$('wakeStatus').textContent='Screen will stay awake while Road Rater is visible.';wakeLock.addEventListener('release',()=>{wakeLock=null;if(wakeDesired){$('wakeStatus').textContent=document.visibilityState==='visible'?'Screen wake lock was released. Tap the toggle to try again.':'Screen wake lock paused while Road Rater is hidden.'}})}catch(e){wakeLock=null;wakeDesired=false;updateWakeButton();$('wakeStatus').textContent=e.name==='NotAllowedError'?'The browser or power settings blocked the screen wake lock. Check Low Power Mode or increase Auto-Lock time in iPhone Settings.':'Could not keep the screen awake. Increase Auto-Lock time in iPhone Settings.'}}
 async function setKeepScreenOn(enabled){wakeDesired=enabled;updateWakeButton();if(enabled){await requestScreenWakeLock()}else{if(wakeLock){const lock=wakeLock;wakeLock=null;await lock.release()}$('wakeStatus').textContent='The screen can dim and lock normally.'}}
 $('wakeToggle').onclick=()=>setKeepScreenOn(!wakeDesired);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&wakeDesired&&!wakeLock)requestScreenWakeLock()});
+document.querySelectorAll('.nav-tab').forEach(button=>button.onclick=()=>{document.querySelectorAll('.app-page').forEach(page=>page.hidden=page.id!==button.dataset.page);document.querySelectorAll('.nav-tab').forEach(tab=>tab.classList.toggle('selected',tab===button));if(button.dataset.page==='journeyPage'&&map)setTimeout(()=>map.invalidateSize(),100)});
+function renderCalibrationList(){const list=$('calibrationList'),names={good:'Good · green',medium:'Medium · amber',bad:'Bad · red'};list.textContent='';for(const key of ['good','medium','bad']){const ref=calibrations[key],row=document.createElement('div');row.className='event';row.textContent=names[key]+': '+(ref?ref.rms.toFixed(3)+' m/s² · '+ref.samples+' moving samples · '+fmtTime(ref.saved):'not recorded');list.append(row)}const refs=['good','medium','bad'].map(key=>calibrations[key]?.rms);$('calibrationStatus').textContent=refs.every(Number.isFinite)?(refs[0]<refs[1]&&refs[1]<refs[2]?'All three references are ready. Future live RAG ratings will use these road samples.':'References saved, but their vibration levels are not in good < medium < bad order. Re-record them at similar speeds and with the same phone position.'):'Record a steady drive for each road type. Each needs at least 30 seconds of moving readings.'}
+async function startCalibration(){if(active||calibrationActive){$('calibrationStatus').textContent='Stop the current recording before starting calibration.';return}await begin();calibrationType=$('calibrationType').value;calibrationSamples=[];signal=[];impactTimes=[];calibrationActive=true;$('startCalibration').disabled=true;$('stopCalibration').disabled=false;$('calibrationStatus').textContent='Recording '+calibrationType+' road reference. Keep moving above 5 km/h; stationary vibration is ignored.';addEvent('Calibration drive started for '+calibrationType+' road.')}
+function stopCalibration(){if(!calibrationActive)return;calibrationActive=false;$('startCalibration').disabled=false;$('stopCalibration').disabled=true;const values=calibrationSamples.slice(),count=values.length;if(count<600){$('calibrationStatus').textContent='Not saved: only '+count+' moving samples collected. Drive at least 30 seconds above 5 km/h, then record this reference again.';addEvent('Calibration discarded: not enough moving data.');update();return}const rms=Math.sqrt(values.reduce((sum,value)=>sum+value*value,0)/count);calibrations[calibrationType]={rms,samples:count,saved:Date.now()};saveCalibrations();renderCalibrationList();addEvent(capitalize(calibrationType)+' road reference saved.');update()}
+function capitalize(text){return text.charAt(0).toUpperCase()+text.slice(1)}
+$('startCalibration').onclick=startCalibration;$('stopCalibration').onclick=stopCalibration;
+$('clearCalibration').onclick=()=>{if(!confirm('Clear all three road calibration references?'))return;calibrations={};saveCalibrations();renderCalibrationList();update()};
 function draw(){
  const c=$('chart'),ctx=c.getContext('2d'),w=c.width,h=c.height;ctx.clearRect(0,0,w,h);
  ctx.strokeStyle='#30423b';ctx.lineWidth=1;for(let y=30;y<h;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}
@@ -94,14 +124,16 @@ function update(){
  $('distance').textContent=(distanceM/1000).toFixed(2)+' km';
  $('speed').textContent=currentSpeed.toFixed(1)+' km/h';
  $('impacts').textContent=impactTimes.length;
- let rms=samples.length?Math.sqrt(samples.reduce((a,b)=>a+b*b,0)/samples.length):0;
- $('rms').textContent=samples.length?rms.toFixed(3)+' m/s²':'—';
- // Experimental relative score; calibrate with repeated drives before interpreting.
- let score=samples.length?Math.max(0,Math.min(100,Math.round(100- Math.min(100,rms*24+impactTimes.length*1.8)))):null;
+ const readings=activeReadings();
+ let rms=readings.length?Math.sqrt(readings.reduce((a,b)=>a+b*b,0)/readings.length):0;
+ $('rms').textContent=readings.length?rms.toFixed(3)+' m/s²':'—';
+ const refs=['good','medium','bad'].map(k=>calibrations[k]?.rms),calibrated=refs.every(Number.isFinite)&&refs[0]<refs[1]&&refs[1]<refs[2];
+ let score=active&&readings.length?scoreForRms(rms,impactTimes.length):null;
  $('score').innerHTML=score===null?'—<span style="font-size:16px;color:var(--muted)"> / 100</span>':score+'<span style="font-size:16px;color:var(--muted)"> / 100</span>';
  $('scorebar').style.width=(score||0)+'%';
  $('scorebar').style.background=score>=75?'#8be0a8':score>=55?'#f2ca68':'#ef7777';
- $('rating').textContent=score===null?'Start a journey to measure road smoothness':score>=90?'Very smooth (experimental)':score>=75?'Relatively smooth (experimental)':score>=55?'Moderate roughness (experimental)':'Rough readings detected (experimental)';
+ $('rating').textContent=score===null?(active?'Waiting for GPS speed above 5 km/h':'Start a journey to measure road smoothness'):calibrated?(score>=75?'GREEN · like your good-road reference':score>=45?'AMBER · like your medium-road reference':'RED · like your bad-road reference'):(score>=75?'Green · uncalibrated estimate':score>=45?'Amber · uncalibrated estimate':'Red · uncalibrated estimate');
+ if(active&&currentSpeed<motionThresholdKmh)$('sensorStatus').textContent='Paused · below 5 km/h';else if(active)$('sensorStatus').textContent='Recording while moving';
  draw();
 }
 function addEvent(msg){let el=document.createElement('div');el.className='event';el.textContent=msg;$('sensorNote').prepend(el)}
@@ -111,7 +143,7 @@ async function requestMotion(){
   if(typeof DeviceMotionEvent.requestPermission==='function'){
    let p=await DeviceMotionEvent.requestPermission();if(p!=='granted'){addEvent('Motion permission was not granted.');return false}
   }
-  window.addEventListener('devicemotion',onMotion,{passive:true});permissionGranted=true;return true;
+  if(!permissionGranted)window.addEventListener('devicemotion',onMotion,{passive:true});permissionGranted=true;return true;
  }catch(e){addEvent('Motion permission error: '+e.message);return false}
 }
 function onMotion(e){
@@ -127,13 +159,13 @@ function onMotion(e){
  const mag=Math.sqrt(x*x+y*y+z*z);
  const now=Date.now();if(now-lastSample<50)return;lastSample=now;
  const v=Math.abs(mag);filtered=.85*filtered+.15*v;
- if(active){samples.push(filtered);if(samples.length>2400)samples.shift();signal.push(Math.min(2,filtered));if(signal.length>100)signal.shift();
+ if((active||calibrationActive)&&currentSpeed>=motionThresholdKmh){const target=active?samples:calibrationSamples;target.push(filtered);if(target.length>2400)target.shift();signal.push(Math.min(2,filtered));if(signal.length>100)signal.shift();
   if(filtered>3.0 && (!impactTimes.length||now-impactTimes[impactTimes.length-1]>700))impactTimes.push(now);
   update();
  }
 }
 function startJourney(source='manual'){
- if(active)return;
+ if(active||calibrationActive)return;
  active=true;startTime=Date.now();distanceM=0;lastPosition=null;routePoints=[];samples=[];signal=[];impactTimes=[];session={started:startTime,source};
  if(liveLine){liveLine.clearLayers();liveMarkers.clearLayers();savedLayer.clearLayers();$('journeySelect').value='live';$('mapStatus').textContent='Waiting for GPS'}
  $('state').textContent='Recording journey';$('sensorStatus').textContent='Recording';$('sensorStatus').style.color='#8be0a8';
@@ -142,15 +174,19 @@ function startJourney(source='manual'){
 function stopJourney(){
  if(!active)return;active=false;
  const rms=samples.length?Math.sqrt(samples.reduce((a,b)=>a+b*b,0)/samples.length):0;
- const score=samples.length?Math.max(0,Math.min(100,Math.round(100-Math.min(100,rms*24+impactTimes.length*1.8)))):null;
+ const score=samples.length?scoreForRms(rms,impactTimes.length):null;
  sessions.unshift({started:startTime,ended:Date.now(),distance:distanceM,rms,impacts:impactTimes.length,score,source:session?.source||'manual',route:routePoints.slice()});
  save();renderHistory();refreshJourneyChoices();$('journeySelect').value='0';showRoute(sessions[0].route);$('state').textContent='Journey saved';$('sensorStatus').textContent='Ready';$('start').disabled=false;$('stop').disabled=true;addEvent('Journey saved.');update();
 }
 function onPosition(pos){
- const c=pos.coords;currentSpeed=c.speed!=null?Math.max(0,c.speed*3.6):currentSpeed;
- if(active&&lastPosition){const R=6371000,toRad=x=>x*Math.PI/180;const p1=toRad(lastPosition.latitude),p2=toRad(c.latitude),dp=p2-p1,dl=toRad(c.longitude-lastPosition.longitude);const q=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;const d=2*R*Math.asin(Math.sqrt(q));if(d<250)distanceM+=d}
- if(active&&Number.isFinite(c.latitude)&&Number.isFinite(c.longitude)){const recent=samples.slice(-100);const roughness=recent.length?Math.sqrt(recent.reduce((a,b)=>a+b*b,0)/recent.length):null;addRoutePoint(c.latitude,c.longitude,roughness,Date.now())}
- lastPosition={latitude:c.latitude,longitude:c.longitude};
+ const c=pos.coords,now=Date.now();let d=0;
+ if(lastPosition){const R=6371000,toRad=x=>x*Math.PI/180;const p1=toRad(lastPosition.latitude),p2=toRad(c.latitude),dp=p2-p1,dl=toRad(c.longitude-lastPosition.longitude);const q=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;d=2*R*Math.asin(Math.sqrt(q))}
+ const elapsed=lastPosition?Math.max(.1,(now-lastPosition.time)/1000):0;
+ if(Number.isFinite(c.speed)&&c.speed>=0)currentSpeed=c.speed*3.6;
+ else currentSpeed=lastPosition&&d>Math.max(3,(c.accuracy||0)*.5)&&elapsed<30?d/elapsed*3.6:0;
+ if(active&&currentSpeed>=motionThresholdKmh&&d<250)distanceM+=d;
+ if(active&&currentSpeed>=motionThresholdKmh&&Number.isFinite(c.latitude)&&Number.isFinite(c.longitude)){const recent=samples.slice(-100);const roughness=recent.length?Math.sqrt(recent.reduce((a,b)=>a+b*b,0)/recent.length):null;addRoutePoint(c.latitude,c.longitude,roughness,Date.now())}
+ lastPosition={latitude:c.latitude,longitude:c.longitude,time:now};
  if(autoEnabled){
   const now=Date.now();
   if(currentSpeed>8){movingSince=movingSince||now;stoppedSince=null;if(!active&&now-movingSince>=15000)startJourney('automatic')}
@@ -161,8 +197,9 @@ function onPosition(pos){
 }
 async function begin(){
  const ok=await requestMotion();
- if(!navigator.geolocation){addEvent('Geolocation is not supported. Routes will not be recorded.');$('mapStatus').textContent='GPS unavailable';return}
- if(watchId===null)watchId=navigator.geolocation.watchPosition(onPosition,e=>{const msg=e.code===1?'Location permission denied. Vibration recording can continue, but no route will be saved.':e.code===2?'GPS location is unavailable. Move outdoors or check device location settings.':'GPS timed out. Waiting for another location update.';addEvent(msg);$('mapStatus').textContent=e.code===1?'Location denied':'Waiting for GPS';},{enableHighAccuracy:true,maximumAge:1000,timeout:15000});
+ const onGpsError=e=>{const msg=e.code===1?'Location permission denied. Vibration recording can continue, but no route will be saved.':e.code===2?'GPS location is unavailable. Move outdoors or check device location settings.':'GPS timed out. Waiting for another location update.';addEvent(msg);$('mapStatus').textContent=e.code===1?'Location denied':'Waiting for GPS'};
+ if(!window.RoadRaterNative&&!navigator.geolocation){addEvent('Geolocation is not supported. Routes will not be recorded.');$('mapStatus').textContent='GPS unavailable';return}
+ if(watchId===null){const options={enableHighAccuracy:true,maximumAge:1000,timeout:15000};watchId=window.RoadRaterNative?window.RoadRaterNative.watchPosition(onPosition,onGpsError,options):navigator.geolocation.watchPosition(onPosition,onGpsError,options)}
  $('sensorStatus').textContent=ok?'Sensors ready':'GPS only';$('sensorNote').textContent=ok?'Motion sensor listener active. GPS updates will appear as location permission is granted.':'Motion unavailable or permission denied. GPS may still work.';
 }
 $('start').onclick=async()=>{await begin();startJourney('manual')};
@@ -177,7 +214,7 @@ $('export').onclick=()=>{
  let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='road-rater-journeys.csv';a.click();URL.revokeObjectURL(a.href);
 };
 if(initMap()){$('showJourney').onclick=()=>{const value=$('journeySelect').value;if(value==='live')showRoute(active?routePoints:(sessions[0]?.route||[]),true);else showRoute(sessions[Number(value)]?.route||[])};$('journeySelect').onchange=()=>$('showJourney').click();refreshJourneyChoices();if(sessions[0]?.route?.length){$('journeySelect').value='0';showRoute(sessions[0].route)}}
-renderHistory();update();
+renderHistory();renderCalibrationList();update();
 })();
 </script>
 </body></html>

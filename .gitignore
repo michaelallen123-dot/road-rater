@@ -1,0 +1,11 @@
+node_modules/
+www/
+.tooling/
+.gradle-user-home/
+.android-user-home/
+android/.gradle/
+android/local.properties
+android/.idea/
+android/**/build/
+android/captures/
+android/.externalNativeBuild/
